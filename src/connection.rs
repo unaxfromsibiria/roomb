@@ -15,7 +15,8 @@ use std::thread;
 use std::io::prelude::*;
 use transport::{
   Answer, Command, ClientIdConstructor, TransportConstructor, JsonBufferCommand,
-  CommandDataCreator, LockManager, AnswerWriter, ClientConnectionData};
+  CommandDataCreator, LockManager, AnswerWriter, ClientConnectionData,
+  CuidOwner, CuidSource};
 
 
 fn get_buffer_command_record(data: Vec<u8>, label: &String) -> Option<JsonBufferCommand> {
@@ -39,12 +40,13 @@ fn prepare_command(
     command: &mut Command,
     buffer: &JsonBufferCommand,
     addr: &SocketAddr,
-    options: &ProjectOptions) -> bool {
+    options: &ProjectOptions,
+    create_cuid: bool) -> bool {
   //
   if command.is_new() {
     // new command income
     command.setup(&buffer);
-    if !command.setup_cuid(&buffer) {
+    if create_cuid {
       command.create_cuid(&addr, &options);
     }
   } else {
@@ -251,12 +253,25 @@ pub fn init_connection(
 
                     let done = match new_json_command {
                       Some(json_buffer) => {
-                        prepare_command(&mut buffer_command, &json_buffer, &client_addr, &local_options)
+                        let need_cuid = !connection_data.has_cuid();
+                        let parce_done = prepare_command(
+                          &mut buffer_command,
+                          &json_buffer,
+                          &client_addr,
+                          &local_options,
+                          need_cuid);
+                        
+                        if need_cuid {
+                          connection_data.setup_cuid(&buffer_command);
+                        } else {
+                          buffer_command.setup_cuid(&connection_data);
+                        }
+                        parce_done
                       },
                       None => false,
                     };
                     // command ready if full
-                    close = auth && !buffer_command.need_auth();
+                    close = !auth && buffer_command.need_auth();
                     if close {
                       warn!(
                         "Authentication failed for command: {} from {}!",
@@ -453,7 +468,7 @@ mod tests {
     let mut command = Command::new();
     let addr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(100, 100, 100, 1), 1000));
     let options = create_options();
-    prepare_command(&mut command, &json_data, &addr, &options);
+    prepare_command(&mut command, &json_data, &addr, &options, true);
     assert!(command.check(case));
   }
 
@@ -464,7 +479,7 @@ mod tests {
     let mut command = Command::new();
     let addr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(100, 100, 100, 1), 1000));
     let options = create_options();
-    prepare_command(&mut command, &json_data, &addr, &options);
+    prepare_command(&mut command, &json_data, &addr, &options, true);
     assert!(command.check(case));
   }
 }

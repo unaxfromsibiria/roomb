@@ -8,7 +8,7 @@ pub mod exec {
     CommandTargetEnum, AnswerTargetEnum, TargetAsDigit, ClientDescription};
   use std::clone::Clone;
   use transport::{
-    Answer, Command, CommandCreationAnswer, ClientConnectionData};
+    Answer, Command, CommandCreationAnswer, ClientConnectionData, CuidSource};
   use options::configuration::ProjectOptions;
   use rustc_serialize::json;
 
@@ -24,6 +24,16 @@ pub mod exec {
     (AnswerTargetEnum::Unknown.to_u32(), String::new())
   }
 
+  fn client_fast_quit_rquest(
+      client_data: &String,
+      connection_data: &mut ClientConnectionData,
+      options: &ProjectOptions) -> (u32, String) {
+    if !client_data.is_empty() {
+      warn!("Client {} requrst a quit with message: {}", connection_data.get_cuid(), client_data); 
+    }  
+    (AnswerTargetEnum::Quit.to_u32(), "buy".to_string())
+  }
+      
   fn answer_verification_request(
       client_data: &String,
       connection_data: &mut ClientConnectionData,
@@ -74,35 +84,33 @@ pub mod exec {
       options: &ProjectOptions) -> (u32, String) {
     // data is some json
     let answer_code: u32;
-    let possible_json_record: Option<ClientDescription> = match(json::decode(client_data)) {
-      Ok(record) => {
-        answer_code = AnswerTargetEnum::Wait.to_u32();
-        Some(record)
-      }
+    let json_record: Option<ClientDescription> = match(json::decode(client_data)) {
+      Ok(record) => Some(record),
       Err(err) => {
         error!("Client data '{}' protocol error: {}", client_data, err);
-        answer_code = AnswerTargetEnum::Error.to_u32();
         None
-      }
+      },
     };
-    let answer_data = match possible_json_record {
+    match json_record {
       Some(record) => {
         match record.get_cid() {
           //client back
           Some(cid) => {
+            // client has cuid, save it
             connection_data.set_cuid(cid);
-            String::new()
+            answer_code = AnswerTargetEnum::Wait.to_u32();
           },
           None => {
-            //answer_code = AnswerTargetEnum::NewCid.to_u32();
-            //connection_data.get_cuid();
-            String::new()
+            // client take cuid
+            answer_code = AnswerTargetEnum::TakeCuid.to_u32();
           }
         }
       },
-      None => String::new(),
-    };
-    (answer_code, answer_data)
+      None => {
+        answer_code = AnswerTargetEnum::Error.to_u32();
+      }
+    }
+    (answer_code, String::new())
   }
 
   // === iface ===
@@ -111,7 +119,7 @@ pub mod exec {
     // data creator for answer
     match target {
       CommandTargetEnum::Unknown => Box::new(answer_empty),
-      CommandTargetEnum::Quit => Box::new(answer_empty),
+      CommandTargetEnum::Quit => Box::new(client_fast_quit_rquest),
       CommandTargetEnum::SigIn => Box::new(answer_verification_request),
       CommandTargetEnum::Auth => Box::new(answer_check_auth),
       CommandTargetEnum::ClientData => Box::new(take_client_data),

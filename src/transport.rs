@@ -33,17 +33,24 @@ pub trait TransportCopy {
 pub trait ClientIdConstructor {
   fn create_cuid(&mut self, addr: &SocketAddr, options: &ProjectOptions);
   fn copy_cuid(&mut self, cuid: &String);
+}
+
+pub trait CuidSource {
   fn get_cuid(&self) -> String;
+}
+
+pub trait CuidOwner {
+  fn setup_cuid(&mut self, src: &CuidSource) -> bool;
 }
 
 pub trait AnswerWriter {
   fn write(&self, stream: &mut TcpStream) -> bool;
 }
 
+
 pub trait CommandDataCreator {
   fn setup(&mut self, src: &JsonBufferCommand);
   fn append(&mut self, src: &JsonBufferCommand);
-  fn setup_cuid(&mut self, src: &JsonBufferCommand) -> bool;
 }
 
 pub trait CommandCreationAnswer {
@@ -147,6 +154,11 @@ impl ClientConnectionData {
   pub fn is_exists(&self) -> bool {
     self.cuid.len() > 0 || self.tmp.len() > 0
   }
+  
+  pub fn has_cuid(&self) -> bool {
+    warn!(" ============> {}",  self.cuid);
+    self.cuid.len() > 0
+  }
 
   pub fn is_cuid_empty(&self) -> bool {
     self.cuid.len() == 0
@@ -168,13 +180,9 @@ impl ClientConnectionData {
     String::from_utf8(self.tmp.clone()).unwrap()
   }
 
-  pub fn clear_temp(&mut self) {
-    self.tmp.clear();
-  }
-
   pub fn clear(&mut self) {
     self.tmp.clear();
-    self.cuid.clear();
+    //self.cuid.clear();
   }
 
   pub fn copy(&mut self, src: &Self) {
@@ -186,6 +194,24 @@ impl ClientConnectionData {
 impl PartialEq for ClientConnectionData {
   fn eq(&self, other: &ClientConnectionData) -> bool {
     self.cuid == other.cuid && self.tmp == self.tmp
+  }
+}
+
+impl CuidSource for ClientConnectionData {
+  fn get_cuid(&self) -> String {
+    self.cuid.clone()
+  }
+}
+
+impl CuidOwner for ClientConnectionData {
+  fn setup_cuid(&mut self, src: &CuidSource) -> bool {
+    let cuid = src.get_cuid();
+    if cuid.len() > 0 {
+      self.cuid = cuid;
+      true
+    } else {
+      false
+    }
   }
 }
 
@@ -209,13 +235,25 @@ impl CommandDataCreator for Command {
     self.part = src.part;
     self.data.push_str(&src.data);
   }
+}
 
-  fn setup_cuid(&mut self, src: &JsonBufferCommand) -> bool {
-    if src.cid.len() > 0 {
-      self.cuid = Some(src.cid.clone());
+impl CuidOwner for Command {
+  fn setup_cuid(&mut self, src: &CuidSource) -> bool {
+    let cuid = src.get_cuid();
+    if cuid.len() > 0 {
+      self.cuid = Some(cuid);
       true
     } else {
       false
+    }
+  }
+}
+
+impl CuidSource for Command {
+  fn get_cuid(&self) -> String {
+    match self.cuid {
+      Some(ref cuid) => cuid.clone(),
+      None => String::new(),
     }
   }
 }
@@ -232,10 +270,6 @@ impl ClientIdConstructor for ClientId {
   fn copy_cuid(&mut self, cuid: &String) {
     self.uid = cuid.clone();
   }
-
-  fn get_cuid(&self) -> String {
-    self.uid.clone()
-  }
 }
 
 impl ClientIdConstructor for Command {
@@ -247,13 +281,6 @@ impl ClientIdConstructor for Command {
 
   fn copy_cuid(&mut self, cuid: &String) {
     self.cuid = Some(cuid.clone());
-  }
-
-  fn get_cuid(&self) -> String {
-    match self.cuid.clone() {
-      Some(uid) => uid,
-      None => String::new(),
-    }
   }
 }
 
@@ -267,10 +294,24 @@ impl ClientIdConstructor for Answer {
   fn copy_cuid(&mut self, cuid: &String) {
     self.cuid = Some(cuid.clone());
   }
+}
 
+impl CuidOwner for Answer {
+  fn setup_cuid(&mut self, src: &CuidSource) -> bool {
+    let cuid = src.get_cuid();
+    if cuid.len() > 0 {
+      self.cuid = Some(cuid);
+      true
+    } else {
+      false
+    }
+  }
+}
+
+impl CuidSource for Answer {
   fn get_cuid(&self) -> String {
-    match self.cuid.clone() {
-      Some(uid) => uid,
+    match self.cuid {
+      Some(ref cuid) => cuid.clone(),
       None => String::new(),
     }
   }
@@ -383,7 +424,7 @@ impl AnswerWriter for Answer {
         }
       },
       None => {
-        error!("Error no cuid!");
+        error!("Error no cuid! target: {}", self.target);
         false
       }
     }
@@ -509,7 +550,7 @@ impl CommandCreationAnswer for Command {
       cuid: match self.cuid {
         Some(ref cuid) => Some(cuid.clone()),
         None => {
-          panic!("Try execute command without ID!");
+          panic!("Try execute command without ID! Command target {}", self.target);
         },
       },
       busy: false,

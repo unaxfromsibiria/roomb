@@ -18,6 +18,7 @@ pub enum AnswerTargetEnum {
   Error,
   WhoAreYou,
   Wait,
+  TakeCuid,
 }
 
 pub enum ClientGroupEnum {
@@ -83,6 +84,7 @@ impl TargetAsDigit for AnswerTargetEnum {
       AnswerTargetEnum::Error => 4,
       AnswerTargetEnum::WhoAreYou => 5,
       AnswerTargetEnum::Wait => 6,
+      AnswerTargetEnum::TakeCuid => 7,
     }
   }
 }
@@ -117,8 +119,9 @@ impl Description for AnswerTargetEnum {
       AnswerTargetEnum::Skip => "'skip'",
       AnswerTargetEnum::VerificationRequest => "'verification request'",
       AnswerTargetEnum::Error => "'error'",
-      AnswerTargetEnum::WhoAreYou => "'auth successful'",
+      AnswerTargetEnum::WhoAreYou => "'auth successful get client info'",
       AnswerTargetEnum::Wait => "'wait'",
+      AnswerTargetEnum::TakeCuid => "'take cuid'",
     }.to_string()
   }
 }
@@ -139,6 +142,7 @@ impl LookAsTargetCommandEnum for u32 {
       1 => CommandTargetEnum::Quit,
       2 => CommandTargetEnum::SigIn,
       3 => CommandTargetEnum::Auth,
+      4 => CommandTargetEnum::ClientData,
       _ => CommandTargetEnum::Unknown,
     }
   }
